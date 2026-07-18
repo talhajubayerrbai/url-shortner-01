@@ -17,11 +17,13 @@ stages:
   - id: test
     kind: test
     needs: [lint]
+    env:
+      DATABASE_URL: "sqlite+aiosqlite:///./test.db"
     steps:
       - name: Run pytest
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+          pip install pytest pytest-asyncio httpx aiosqlite
           pytest tests/ -v
 
   - id: build
@@ -38,7 +40,7 @@ stages:
       - name: Terraform init and apply
         run: |
           cd infra
-          terraform init -reconfigure \
+          terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=url-shortner-01/terraform.tfstate" \
             -backend-config="region=us-east-1"
