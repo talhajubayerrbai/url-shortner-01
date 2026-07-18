@@ -1,0 +1,123 @@
+---
+- name: Deploy URL Shortener
+  hosts: app
+  become: true
+  vars:
+    app_image: "url-shortner-01:latest"
+    app_port: 8000
+    db_name: urlshortener
+    db_user: dbadmin
+
+  tasks:
+    - name: Wait for SSH to be available
+      wait_for_connection:
+        timeout: 120
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+          - python3-pip
+        state: present
+
+    - name: Enable and start Docker
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Pull application Docker image
+      community.docker.docker_image:
+        name: "{{ app_image }}"
+        source: pull
+      ignore_errors: true  # Will use local build if registry not set up
+
+    - name: Copy docker-compose file
+      copy:
+        dest: /opt/url-shortner-01/docker-compose.yml
+        mode: "0644"
+        content: |
+          version: "3.9"
+          services:
+            app:
+              image: {{ app_image }}
+              build:
+                context: /opt/url-shortner-01/src
+              restart: always
+              ports:
+                - "8000:8000"
+              environment:
+                DATABASE_URL: "postgresql://{{ db_user }}:{{ db_password }}@{{ db_host }}/{{ db_name }}"
+                BASE_URL: "http://{{ alb_dns }}"
+                APP_ENV: "production"
+
+    - name: Copy app source to server
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: /opt/url-shortner-01/src/
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=infra"
+          - "--exclude=ansible"
+          - "--exclude=__pycache__"
+          - "--exclude=*.pyc"
+          - "--exclude=test.db"
+
+    - name: Build Docker image on server
+      community.docker.docker_image:
+        name: "url-shortner-01:latest"
+        build:
+          path: /opt/url-shortner-01/src
+        source: build
+        force_source: true
+
+    - name: Run database migrations
+      community.docker.docker_container:
+        name: url-shortner-01-migrate
+        image: "url-shortner-01:latest"
+        command: alembic upgrade head
+        env:
+          DATABASE_URL: "postgresql://{{ db_user }}:{{ db_password }}@{{ db_host }}/{{ db_name }}"
+        detach: false
+        auto_remove: true
+
+    - name: Stop existing app container
+      community.docker.docker_container:
+        name: url-shortner-01-app
+        state: absent
+      ignore_errors: true
+
+    - name: Start application container
+      community.docker.docker_container:
+        name: url-shortner-01-app
+        image: "url-shortner-01:latest"
+        state: started
+        restart_policy: always
+        ports:
+          - "8000:8000"
+        env:
+          DATABASE_URL: "postgresql://{{ db_user }}:{{ db_password }}@{{ db_host }}/{{ db_name }}"
+          BASE_URL: "http://{{ alb_dns }}"
+          APP_ENV: production
+
+    - name: Verify app is responding
+      uri:
+        url: "http://localhost:8000/health"
+        method: GET
+        status_code: 200
+      retries: 10
+      delay: 5
+      register: health_result
+      until: health_result.status == 200

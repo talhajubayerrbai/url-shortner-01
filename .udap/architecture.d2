@@ -1,0 +1,12 @@
+# udap:meta cloud=aws region=us-east-1 target=ec2
+
+user: User { shape: rectangle; udap-type: generic.user }
+vpc: Default VPC {
+  alb: Load Balancer (ALB) { shape: rectangle; udap-type: aws.alb }
+  ec2: App Server (EC2 t3.micro) { shape: rectangle; udap-type: aws.ec2 }
+  rds: Postgres 15 (RDS db.t3.micro) { shape: rectangle; udap-type: aws.rds }
+}
+
+user -> vpc.alb: HTTPS / HTTP
+vpc.alb -> vpc.ec2: HTTP :8000
+vpc.ec2 -> vpc.rds: Port 5432
