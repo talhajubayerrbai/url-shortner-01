@@ -8,8 +8,6 @@ terraform {
   }
   backend "s3" {
     bucket = ""       # injected: TF_STATE_BUCKET
-    key    = "url-shortner-01/terraform.tfstate"
-    region = "us-east-1"
   }
 }
 
