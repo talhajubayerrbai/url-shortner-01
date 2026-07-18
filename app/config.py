@@ -1,8 +1,10 @@
+import os
+
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str
+    database_url: str = "sqlite+aiosqlite:///./test.db"
     base_url: str = "http://localhost:8000"
     code_length: int = 7
     app_env: str = "production"
